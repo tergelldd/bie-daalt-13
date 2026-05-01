@@ -1,5 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
 
 const SHORT_CODE_LENGTH = 7;
@@ -20,18 +19,34 @@ function randomCode(length: number): string {
 export class AppService {
   constructor(private readonly prisma: PrismaService) {}
 
+  getHello(): string {
+    return 'Hello World!';
+  }
+
   async createShortLink(input: {
     longUrl: string;
     expiresAt?: Date;
   }): Promise<{ code: string; longUrl: string }> {
+    const longUrl = input.longUrl?.trim();
+    if (!longUrl) {
+      throw new BadRequestException('longUrl is required');
+    }
+
+    try {
+      // eslint-disable-next-line no-new
+      new URL(longUrl);
+    } catch {
+      throw new BadRequestException('longUrl must be a valid URL');
+    }
+
     for (let attempt = 1; attempt <= MAX_CODE_GENERATION_ATTEMPTS; attempt++) {
       const code = randomCode(SHORT_CODE_LENGTH);
 
       try {
-        const created = await this.prisma.shortUrl.create({
+        const created = await (this.prisma as any).shortUrl.create({
           data: {
             code,
-            longUrl: input.longUrl,
+            longUrl,
             expiresAt: input.expiresAt,
           },
           select: { code: true, longUrl: true },
@@ -39,10 +54,7 @@ export class AppService {
 
         return created;
       } catch (err) {
-        if (
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === 'P2002'
-        ) {
+        if ((err as any)?.code === 'P2002') {
           continue;
         }
         throw err;
