@@ -1,0 +1,21 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model ShortUrl {
+  id         String   @id @default(uuid())
+  code       String   @unique @db.VarChar(32)
+  longUrl    String
+  clicks     Int      @default(0)
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([expiresAt])
+}
+
