@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  GoneException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
 
 const SHORT_CODE_LENGTH = 7;
@@ -21,6 +26,38 @@ export class AppService {
 
   getHello(): string {
     return 'Hello World!';
+  }
+
+  async getOriginalUrl(code: string): Promise<string> {
+    const normalized = code?.trim();
+    if (!normalized) {
+      throw new BadRequestException('code is required');
+    }
+
+    const now = new Date();
+
+    return await (this.prisma as any).$transaction(async (tx: any) => {
+      const found = await tx.shortUrl.findUnique({
+        where: { code: normalized },
+        select: { longUrl: true, expiresAt: true },
+      });
+
+      if (!found) {
+        throw new NotFoundException('Short URL not found');
+      }
+
+      if (found.expiresAt && found.expiresAt <= now) {
+        throw new GoneException('Short URL expired');
+      }
+
+      await tx.shortUrl.update({
+        where: { code: normalized },
+        data: { clicks: { increment: 1 } },
+        select: { code: true },
+      });
+
+      return found.longUrl as string;
+    });
   }
 
   async createShortLink(input: {
