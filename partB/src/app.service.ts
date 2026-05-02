@@ -28,6 +28,15 @@ export class AppService {
     return 'Hello World!';
   }
 
+  /**
+   * Resolve a short code to its original URL.
+   *
+   * Rules:
+   * - If code is missing/blank → 400
+   * - If code not found → 404
+   * - If expired (`expiresAt <= now`) → 410
+   * - On success, increments `clicks` atomically and returns `longUrl`
+   */
   async getOriginalUrl(code: string): Promise<string> {
     const normalized = code?.trim();
     if (!normalized) {

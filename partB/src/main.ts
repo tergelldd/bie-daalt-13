@@ -2,6 +2,11 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
+/**
+ * App bootstrap.
+ *
+ * Swagger UI is served at `/api` (e.g. http://localhost:3000/api).
+ */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 

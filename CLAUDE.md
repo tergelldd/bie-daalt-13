@@ -73,3 +73,8 @@ cd frontend && npm test
 - `partA/STACK-COMPARISON.md`: 3 stack + сонголтын шалтгаан
 - `partA/ARCHITECTURE.md`: Mermaid diagram (module/layer + data flow)
 - `partA/README.md`: build/run/tests + env vars + endpoints (draft байж болно)
+
+---
+
+## API Documentation
+- Swagger UI: `http://localhost:3000/api`

@@ -11,6 +11,14 @@ export class AppController {
     return this.appService.getHello();
   }
 
+  /**
+   * Redirect to the original URL by short code.
+   *
+   * Status codes:
+   * - 302 on success (Express redirect)
+   * - 404 if code not found
+   * - 410 if expired
+   */
   @Get(':code')
   async redirectToLongUrl(
     @Param('code') code: string,
