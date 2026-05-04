@@ -11,6 +11,11 @@ export class AppController {
     return this.appService.getHello();
   }
 
+  @Get('stats/:code')
+  async getStats(@Param('code') code: string) {
+    return this.appService.getStatsByCode(code);
+  }
+
   /**
    * Redirect to the original URL by short code.
    *

@@ -111,5 +111,34 @@ export class AppService {
       `Failed to generate unique short code after ${MAX_CODE_GENERATION_ATTEMPTS} attempts`,
     );
   }
+
+  /**
+   * Public stats for a short code (does not increment clicks).
+   */
+  async getStatsByCode(code: string): Promise<{
+    clicks: number;
+    originalUrl: string;
+    createdAt: Date;
+  }> {
+    const normalized = code?.trim();
+    if (!normalized) {
+      throw new BadRequestException('code is required');
+    }
+
+    const row = await (this.prisma as any).shortUrl.findUnique({
+      where: { code: normalized },
+      select: { clicks: true, longUrl: true, createdAt: true },
+    });
+
+    if (!row) {
+      throw new NotFoundException('Short URL not found');
+    }
+
+    return {
+      clicks: row.clicks as number,
+      originalUrl: row.longUrl as string,
+      createdAt: row.createdAt as Date,
+    };
+  }
 }
 
