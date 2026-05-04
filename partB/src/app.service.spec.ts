@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AppService } from './app.service';
 import { PrismaService } from './prisma/prisma.service';
 
@@ -58,6 +58,14 @@ describe('AppService.createShortLink', () => {
     await expect(
       service.createShortLink({ longUrl: 'not-a-url' }),
     ).rejects.toBeDefined();
+
+    await expect(
+      service.createShortLink({ longUrl: 'javascript:alert(1)' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    await expect(
+      service.createShortLink({ longUrl: 'ftp://example.com/a' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(prismaMock.shortUrl.create).not.toHaveBeenCalled();
   });
@@ -140,6 +148,24 @@ describe('AppService.getOriginalUrl', () => {
     await expect(service.getOriginalUrl('NOPE')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('Буруу тэмдэгттэй кодоор BadRequestException шиднэ', async () => {
+    const prismaMock = createPrismaMock();
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AppService,
+        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(AppService);
+
+    await expect(service.getOriginalUrl('x/y')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
   it('clicks тоо амжилттай +1 нэмэгдэж update дуудагддаг', async () => {

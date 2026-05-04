@@ -1,10 +1,15 @@
 import {
-  BadRequestException,
   GoneException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
+import {
+  assertValidLongUrlForCreate,
+  normalizeShortCodeParam,
+  safeRedirectHref,
+} from './url-validation';
 
 const SHORT_CODE_LENGTH = 7;
 const SHORT_CODE_ALPHABET =
@@ -32,16 +37,13 @@ export class AppService {
    * Resolve a short code to its original URL.
    *
    * Rules:
-   * - If code is missing/blank → 400
+   * - If code is missing/invalid format → 400
    * - If code not found → 404
    * - If expired (`expiresAt <= now`) → 410
    * - On success, increments `clicks` atomically and returns `longUrl`
    */
   async getOriginalUrl(code: string): Promise<string> {
-    const normalized = code?.trim();
-    if (!normalized) {
-      throw new BadRequestException('code is required');
-    }
+    const normalized = normalizeShortCodeParam(code);
 
     const now = new Date();
 
@@ -59,13 +61,15 @@ export class AppService {
         throw new GoneException('Short URL expired');
       }
 
+      const targetHref = safeRedirectHref(found.longUrl as string);
+
       await tx.shortUrl.update({
         where: { code: normalized },
         data: { clicks: { increment: 1 } },
         select: { code: true },
       });
 
-      return found.longUrl as string;
+      return targetHref;
     });
   }
 
@@ -73,17 +77,8 @@ export class AppService {
     longUrl: string;
     expiresAt?: Date;
   }): Promise<{ code: string; longUrl: string }> {
-    const longUrl = input.longUrl?.trim();
-    if (!longUrl) {
-      throw new BadRequestException('longUrl is required');
-    }
-
-    try {
-      // eslint-disable-next-line no-new
-      new URL(longUrl);
-    } catch {
-      throw new BadRequestException('longUrl must be a valid URL');
-    }
+    const parsed = assertValidLongUrlForCreate(input.longUrl ?? '');
+    const longUrl = parsed.href;
 
     for (let attempt = 1; attempt <= MAX_CODE_GENERATION_ATTEMPTS; attempt++) {
       const code = randomCode(SHORT_CODE_LENGTH);
@@ -120,10 +115,7 @@ export class AppService {
     originalUrl: string;
     createdAt: Date;
   }> {
-    const normalized = code?.trim();
-    if (!normalized) {
-      throw new BadRequestException('code is required');
-    }
+    const normalized = normalizeShortCodeParam(code);
 
     const row = await (this.prisma as any).shortUrl.findUnique({
       where: { code: normalized },
@@ -134,11 +126,15 @@ export class AppService {
       throw new NotFoundException('Short URL not found');
     }
 
-    return {
-      clicks: row.clicks as number,
-      originalUrl: row.longUrl as string,
-      createdAt: row.createdAt as Date,
-    };
+    try {
+      return {
+        clicks: row.clicks as number,
+        originalUrl: assertValidLongUrlForCreate(row.longUrl as string).href,
+        createdAt: row.createdAt as Date,
+      };
+    } catch {
+      throw new InternalServerErrorException('Stored URL failed validation');
+    }
   }
 }
 

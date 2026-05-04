@@ -2,6 +2,7 @@ import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { stringify as stringifyYaml } from 'yaml';
 import { AppModule } from './app.module';
 
@@ -13,6 +14,13 @@ import { AppModule } from './app.module';
  */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Default CSP breaks Swagger UI inline scripts; tighten in prod behind a template if needed.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+    }),
+  );
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('URL Shortener')
