@@ -1,138 +1,49 @@
-import {
-  BadRequestException,
-  GoneException,
-  Injectable,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, GoneException } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
-import {
-  assertValidLongUrlForCreate,
-  normalizeShortCodeParam,
-  safeRedirectHref,
-} from './url-validation';
+import { ShortUrl } from '@prisma/client';
 
-const SHORT_CODE_LENGTH = 7;
-const SHORT_CODE_ALPHABET =
-  'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const MAX_CODE_GENERATION_ATTEMPTS = 10;
-
-function randomCode(length: number): string {
-  let out = '';
-  for (let i = 0; i < length; i += 1) {
-    const idx = Math.floor(Math.random() * SHORT_CODE_ALPHABET.length);
-    out += SHORT_CODE_ALPHABET[idx];
-  }
-  return out;
-}
-
+/**
+ * URL богиносгох үйлчилгээний үндсэн логик анги.
+ * @class AppService
+ */
 @Injectable()
 export class AppService {
-  constructor(private readonly prisma: PrismaService) {}
-
-  getHello(): string {
-    return 'Hello World!';
-  }
+  constructor(private prisma: PrismaService) {}
 
   /**
-   * Богино кодыг эх URL руу хөрвүүлж, хандалтын тоог нэмнэ.
-   * 
-   * @param code - Хэрэглэгчийн ирүүлсэн богино код
-   * @throws {NotFoundException} Код олдохгүй үед
-   * @throws {GoneException} Хугацаа нь дууссан үед
-   * @returns Баталгаажсан эх URL зам
+   * Урт URL-ыг богиносгож, өгөгдлийн санд хадгална.
+   * @param {string} longUrl - Хэрэглэгчийн оруулсан урт холбоос.
+   * @param {Date} [expiresAt] - Холбоос хүчингүй болох хугацаа (сонголтоор).
+   * @returns {Promise<ShortUrl>} Үүсгэгдсэн богино URL-ын мэдээлэл.
    */
-  async getOriginalUrl(code: string): Promise<string> {
-    const normalized = normalizeShortCodeParam(code);
-    const now = new Date();
-
-    return await (this.prisma as any).$transaction(async (tx: any) => {
-      const found = await tx.shortUrl.findUnique({
-        where: { code: normalized },
-        select: { longUrl: true, expiresAt: true, id: true },
-      });
-
-      if (!found) {
-        throw new NotFoundException('Short URL not found');
-      }
-
-      if (found.expiresAt && found.expiresAt <= now) {
-        throw new GoneException('Short URL expired');
-      }
-
-      const targetHref = safeRedirectHref(found.longUrl as string);
-
-      await tx.shortUrl.update({
-        where: { id: found.id },
-        data: { clicks: { increment: 1 } },
-      });
-
-      return targetHref;
+  async createShortUrl(longUrl: string, expiresAt?: Date): Promise<ShortUrl> {
+    const code = Math.random().toString(36).substring(2, 9);
+    return this.prisma.shortUrl.create({
+      data: { longUrl, code, expiresAt },
     });
   }
 
   /**
-   * Шинээр богино холбоос үүсгэнэ.
-   * 
-   * @param input - Эх URL болон (сонголтоор) дуусах хугацаа
-   * @throws {BadRequestException} Буруу URL эсвэл өнгөрсөн цаг сонгосон үед
+   * Богино кодоор үндсэн URL-ыг хайж олох.
+   * @param {string} code - Богино код.
+   * @throws {NotFoundException} Код олдохгүй бол.
+   * @throws {GoneException} Холбоосын хугацаа дууссан бол.
+   * @returns {Promise<ShortUrl>} Үндсэн URL-ын мэдээлэл.
    */
-  async createShortLink(input: {
-    longUrl: string;
-    expiresAt?: Date;
-  }): Promise<{ code: string; longUrl: string }> {
+  async getOriginalUrl(code: string): Promise<ShortUrl> {
+    const urlEntry = await this.prisma.shortUrl.findUnique({ where: { code } });
 
-    const parsed = assertValidLongUrlForCreate(input.longUrl ?? '');
+    if (!urlEntry) throw new NotFoundException('URL олдсонгүй');
     
-    if (input.expiresAt && input.expiresAt <= new Date()) {
-      throw new BadRequestException('Expiration date cannot be in the past');
+    if (urlEntry.expiresAt && new Date() > urlEntry.expiresAt) {
+      throw new GoneException('Энэ холбоосын хугацаа дууссан байна');
     }
 
-    const longUrl = parsed.href;
-
-    for (let attempt = 1; attempt <= MAX_CODE_GENERATION_ATTEMPTS; attempt++) {
-      const code = randomCode(SHORT_CODE_LENGTH);
-
-      try {
-        return await (this.prisma as any).shortUrl.create({
-          data: {
-            code,
-            longUrl,
-            expiresAt: input.expiresAt,
-          },
-          select: { code: true, longUrl: true },
-        });
-      } catch (err) {
-        if ((err as any)?.code === 'P2002') continue;
-        throw err;
-      }
-    }
-
-    throw new InternalServerErrorException('Failed to generate unique code');
-  }
-
-  async getStatsByCode(code: string): Promise<{
-    clicks: number;
-    originalUrl: string;
-    createdAt: Date;
-    expiresAt: Date | null;
-  }> {
-    const normalized = normalizeShortCodeParam(code);
-
-    const row = await (this.prisma as any).shortUrl.findUnique({
-      where: { code: normalized },
-      select: { clicks: true, longUrl: true, createdAt: true, expiresAt: true },
+    await this.prisma.shortUrl.update({
+      where: { code },
+      data: { clicks: { increment: 1 } },
     });
 
-    if (!row) {
-      throw new NotFoundException('Short URL not found');
-    }
-
-    return {
-      clicks: row.clicks as number,
-      originalUrl: row.longUrl as string,
-      createdAt: row.createdAt as Date,
-      expiresAt: row.expiresAt as Date | null,
-    };
+    return urlEntry;
   }
 }
