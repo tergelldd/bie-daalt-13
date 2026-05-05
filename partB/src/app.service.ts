@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, GoneException } from '@nestjs/common';
+import { Injectable, NotFoundException, GoneException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
 import { ShortUrl } from '@prisma/client';
 
@@ -16,7 +16,9 @@ export class AppService {
    * @param {Date} [expiresAt] - Холбоос хүчингүй болох хугацаа (сонголтоор).
    * @returns {Promise<ShortUrl>} Үүсгэгдсэн богино URL-ын мэдээлэл.
    */
+  
   async createShortUrl(longUrl: string, expiresAt?: Date): Promise<ShortUrl> {
+    if (!longUrl) throw new BadRequestException('URL заавал байх ёстой');
     const code = Math.random().toString(36).substring(2, 9);
     return this.prisma.shortUrl.create({
       data: { longUrl, code, expiresAt },

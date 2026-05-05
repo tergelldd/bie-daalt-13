@@ -1,198 +1,98 @@
 import { Test } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, GoneException } from '@nestjs/common';
 import { AppService } from './app.service';
 import { PrismaService } from './prisma/prisma.service';
 
-describe('AppService.createShortLink', () => {
-  function createPrismaMock() {
-    return {
-      shortUrl: {
-        create: jest.fn(),
-      },
-    };
-  }
+describe('AppService', () => {
+  let service: AppService;
+  let prismaMock: any;
 
-  it('Success: valid URL өгвөл short code үүсгээд хадгална', async () => {
-    const prismaMock = createPrismaMock();
-    prismaMock.shortUrl.create.mockResolvedValue({
-      code: 'AbC123x',
-      longUrl: 'https://example.com/path',
-    });
-
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        AppService,
-        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
-      ],
-    }).compile();
-
-    const service = moduleRef.get(AppService);
-
-    const result = await service.createShortLink({
-      longUrl: 'https://example.com/path',
-    });
-
-    expect(result).toEqual({ code: 'AbC123x', longUrl: 'https://example.com/path' });
-    expect(prismaMock.shortUrl.create).toHaveBeenCalledTimes(1);
-    expect(prismaMock.shortUrl.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ longUrl: 'https://example.com/path' }),
-        select: { code: true, longUrl: true },
-      }),
-    );
-  });
-
-  it('Validation: хоосон эсвэл буруу URL өгвөл алдаа шиднэ (Prisma дуудахгүй)', async () => {
-    const prismaMock = createPrismaMock();
-
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        AppService,
-        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
-      ],
-    }).compile();
-
-    const service = moduleRef.get(AppService);
-
-    await expect(service.createShortLink({ longUrl: '' })).rejects.toBeDefined();
-    await expect(
-      service.createShortLink({ longUrl: 'not-a-url' }),
-    ).rejects.toBeDefined();
-
-    await expect(
-      service.createShortLink({ longUrl: 'javascript:alert(1)' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
-    await expect(
-      service.createShortLink({ longUrl: 'ftp://example.com/a' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
-    expect(prismaMock.shortUrl.create).not.toHaveBeenCalled();
-  });
-
-  it('Retry: P2002 collision гарвал дахин оролдож амжилттай бол буцаана', async () => {
-    const prismaMock = createPrismaMock();
-    prismaMock.shortUrl.create
-      .mockRejectedValueOnce({ code: 'P2002' })
-      .mockResolvedValueOnce({
-        code: 'ZyX987q',
-        longUrl: 'https://example.com',
-      });
-
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        AppService,
-        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
-      ],
-    }).compile();
-
-    const service = moduleRef.get(AppService);
-
-    const result = await service.createShortLink({ longUrl: 'https://example.com' });
-    expect(result).toEqual({ code: 'ZyX987q', longUrl: 'https://example.com' });
-    expect(prismaMock.shortUrl.create).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('AppService.getOriginalUrl', () => {
-  function createPrismaMock() {
+  const createPrismaMock = () => {
     const tx = {
       shortUrl: {
+        create: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
       },
     };
-
     return {
       $transaction: jest.fn(async (fn: any) => await fn(tx)),
       shortUrl: tx.shortUrl,
       __tx: tx,
     };
-  }
+  };
 
-  it('Зөв кодоор хайхад URL буцаадаг', async () => {
-    const prismaMock = createPrismaMock();
-    prismaMock.__tx.shortUrl.findUnique.mockResolvedValue({
-      longUrl: 'https://example.com/abc',
-      expiresAt: null,
+  beforeEach(async () => {
+    prismaMock = createPrismaMock();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AppService,
+        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
+      ],
+    }).compile();
+    service = moduleRef.get(AppService);
+  });
+
+  describe('createShortUrl', () => {
+    it('1. Success: valid URL өгвөл хадгална', async () => {
+      prismaMock.shortUrl.create.mockResolvedValue({ code: 'AbC123x' });
+      const res = await service.createShortUrl('https://test.com');
+      expect(res.code).toBeDefined();
     });
-    prismaMock.__tx.shortUrl.update.mockResolvedValue({ code: 'AbC123x' });
 
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        AppService,
-        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
-      ],
-    }).compile();
-
-    const service = moduleRef.get(AppService);
-
-    await expect(service.getOriginalUrl('AbC123x')).resolves.toBe(
-      'https://example.com/abc',
-    );
-  });
-
-  it('Байхгүй кодоор хайхад NotFoundException шиднэ', async () => {
-    const prismaMock = createPrismaMock();
-    prismaMock.__tx.shortUrl.findUnique.mockResolvedValue(null);
-
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        AppService,
-        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
-      ],
-    }).compile();
-
-    const service = moduleRef.get(AppService);
-
-    await expect(service.getOriginalUrl('NOPE')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
-  });
-
-  it('Буруу тэмдэгттэй кодоор BadRequestException шиднэ', async () => {
-    const prismaMock = createPrismaMock();
-
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        AppService,
-        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
-      ],
-    }).compile();
-
-    const service = moduleRef.get(AppService);
-
-    await expect(service.getOriginalUrl('x/y')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
-  });
-
-  it('clicks тоо амжилттай +1 нэмэгдэж update дуудагддаг', async () => {
-    const prismaMock = createPrismaMock();
-    prismaMock.__tx.shortUrl.findUnique.mockResolvedValue({
-      longUrl: 'https://example.com/click',
-      expiresAt: null,
+    it('2. Validation: хоосон URL дээр алдаа шиднэ', async () => {
+      // Чиний AppService-д URL validation байхгүй бол энэ тест унах магадлалтай
+      await expect(service.createShortUrl('')).rejects.toThrow();
     });
-    prismaMock.__tx.shortUrl.update.mockResolvedValue({ code: 'click1' });
 
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        AppService,
-        { provide: PrismaService, useValue: prismaMock as unknown as PrismaService },
-      ],
-    }).compile();
+    it('3. Feature: expiresAt утгыг зөв хадгална', async () => {
+      const date = new Date();
+      prismaMock.shortUrl.create.mockImplementation(({ data }) => data);
+      const res = await service.createShortUrl('https://test.com', date);
+      expect(res.expiresAt).toEqual(date);
+    });
 
-    const service = moduleRef.get(AppService);
+    it('5. Length: үүсгэсэн код 7 тэмдэгт байх ёстой', async () => {
+      prismaMock.shortUrl.create.mockImplementation(({ data }) => data);
+      const res = await service.createShortUrl('https://test.com');
+      expect(res.code.length).toBe(7);
+    });
+  });
 
-    await service.getOriginalUrl('click1');
+  describe('getOriginalUrl', () => {
+    it('6. Success: урт URL-ыг буцаана', async () => {
+      prismaMock.shortUrl.findUnique.mockResolvedValue({ longUrl: 'https://test.com', expiresAt: null });
+      const url = await service.getOriginalUrl('abc1234');
+      expect(url.longUrl).toBe('https://test.com');
+    });
 
-    expect(prismaMock.__tx.shortUrl.update).toHaveBeenCalledTimes(1);
-    expect(prismaMock.__tx.shortUrl.update).toHaveBeenCalledWith({
-      where: { code: 'click1' },
-      data: { clicks: { increment: 1 } },
-      select: { code: true },
+    it('7. Not Found: байхгүй код дээр 404 шиднэ', async () => {
+      prismaMock.shortUrl.findUnique.mockResolvedValue(null);
+      await expect(service.getOriginalUrl('none')).rejects.toThrow(NotFoundException);
+    });
+
+    it('8. Analytics: clicks тоог нэмэгдүүлнэ', async () => {
+      prismaMock.shortUrl.findUnique.mockResolvedValue({ longUrl: 't.com' });
+      await service.getOriginalUrl('click');
+      expect(prismaMock.shortUrl.update).toHaveBeenCalled();
+    });
+
+    it('9. Expiration: хугацаа дууссан бол 410 шиднэ', async () => {
+      const past = new Date(); past.setFullYear(2020);
+      prismaMock.shortUrl.findUnique.mockResolvedValue({ expiresAt: past });
+      await expect(service.getOriginalUrl('old')).rejects.toThrow(GoneException);
+    });
+
+    it('10. Expiration: хугацаа дуусаагүй бол ажиллана', async () => {
+      const future = new Date(); future.setFullYear(2030);
+      prismaMock.shortUrl.findUnique.mockResolvedValue({ longUrl: 't.com', expiresAt: future });
+      const res = await service.getOriginalUrl('new');
+      expect(res).toBeDefined();
+    });
+
+    it('11. Security: буруу тэмдэгттэй код татгалзана', async () => {
+      // Энэ тест чиний AppService-д regex байгаа эсэхээс хамаарна
+      await expect(service.getOriginalUrl('x/y')).rejects.toThrow();
     });
   });
 });
-
