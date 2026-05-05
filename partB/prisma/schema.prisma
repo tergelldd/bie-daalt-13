@@ -7,15 +7,10 @@ datasource db {
 }
 
 model ShortUrl {
-  id         String   @id @default(uuid())
-  code       String   @unique @db.VarChar(32)
-  longUrl    String
-  clicks     Int      @default(0)
-  expiresAt  DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@index([createdAt])
-  @@index([expiresAt])
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  longUrl     String
+  clicks      Int       @default(0)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
 }
-

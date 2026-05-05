@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
+import { Controller, Get, Param, Post, Body,Res } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AppService } from './app.service';
@@ -11,6 +11,17 @@ export class AppController {
   @Get()
   getHello(): string {
     return this.appService.getHello();
+  }
+
+  @Post('api/urls')
+  async createUrl(@Body() body: { longUrl: string; expiresAt?: string }) {
+    // String-ээр ирсэн огноог Date объект болгож хөрвүүлнэ
+    const expiry = body.expiresAt ? new Date(body.expiresAt) : undefined;
+    
+    return this.appService.createShortLink({
+      longUrl: body.longUrl,
+      expiresAt: expiry,
+    });
   }
 
   @Get('stats/:code')

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   GoneException,
   Injectable,
   InternalServerErrorException,
@@ -34,23 +35,21 @@ export class AppService {
   }
 
   /**
-   * Resolve a short code to its original URL.
-   *
-   * Rules:
-   * - If code is missing/invalid format → 400
-   * - If code not found → 404
-   * - If expired (`expiresAt <= now`) → 410
-   * - On success, increments `clicks` atomically and returns `longUrl`
+   * Богино кодыг эх URL руу хөрвүүлж, хандалтын тоог нэмнэ.
+   * 
+   * @param code - Хэрэглэгчийн ирүүлсэн богино код
+   * @throws {NotFoundException} Код олдохгүй үед
+   * @throws {GoneException} Хугацаа нь дууссан үед
+   * @returns Баталгаажсан эх URL зам
    */
   async getOriginalUrl(code: string): Promise<string> {
     const normalized = normalizeShortCodeParam(code);
-
     const now = new Date();
 
     return await (this.prisma as any).$transaction(async (tx: any) => {
       const found = await tx.shortUrl.findUnique({
         where: { code: normalized },
-        select: { longUrl: true, expiresAt: true },
+        select: { longUrl: true, expiresAt: true, id: true },
       });
 
       if (!found) {
@@ -64,27 +63,38 @@ export class AppService {
       const targetHref = safeRedirectHref(found.longUrl as string);
 
       await tx.shortUrl.update({
-        where: { code: normalized },
+        where: { id: found.id },
         data: { clicks: { increment: 1 } },
-        select: { code: true },
       });
 
       return targetHref;
     });
   }
 
+  /**
+   * Шинээр богино холбоос үүсгэнэ.
+   * 
+   * @param input - Эх URL болон (сонголтоор) дуусах хугацаа
+   * @throws {BadRequestException} Буруу URL эсвэл өнгөрсөн цаг сонгосон үед
+   */
   async createShortLink(input: {
     longUrl: string;
     expiresAt?: Date;
   }): Promise<{ code: string; longUrl: string }> {
+
     const parsed = assertValidLongUrlForCreate(input.longUrl ?? '');
+    
+    if (input.expiresAt && input.expiresAt <= new Date()) {
+      throw new BadRequestException('Expiration date cannot be in the past');
+    }
+
     const longUrl = parsed.href;
 
     for (let attempt = 1; attempt <= MAX_CODE_GENERATION_ATTEMPTS; attempt++) {
       const code = randomCode(SHORT_CODE_LENGTH);
 
       try {
-        const created = await (this.prisma as any).shortUrl.create({
+        return await (this.prisma as any).shortUrl.create({
           data: {
             code,
             longUrl,
@@ -92,49 +102,37 @@ export class AppService {
           },
           select: { code: true, longUrl: true },
         });
-
-        return created;
       } catch (err) {
-        if ((err as any)?.code === 'P2002') {
-          continue;
-        }
+        if ((err as any)?.code === 'P2002') continue;
         throw err;
       }
     }
 
-    throw new Error(
-      `Failed to generate unique short code after ${MAX_CODE_GENERATION_ATTEMPTS} attempts`,
-    );
+    throw new InternalServerErrorException('Failed to generate unique code');
   }
 
-  /**
-   * Public stats for a short code (does not increment clicks).
-   */
   async getStatsByCode(code: string): Promise<{
     clicks: number;
     originalUrl: string;
     createdAt: Date;
+    expiresAt: Date | null;
   }> {
     const normalized = normalizeShortCodeParam(code);
 
     const row = await (this.prisma as any).shortUrl.findUnique({
       where: { code: normalized },
-      select: { clicks: true, longUrl: true, createdAt: true },
+      select: { clicks: true, longUrl: true, createdAt: true, expiresAt: true },
     });
 
     if (!row) {
       throw new NotFoundException('Short URL not found');
     }
 
-    try {
-      return {
-        clicks: row.clicks as number,
-        originalUrl: assertValidLongUrlForCreate(row.longUrl as string).href,
-        createdAt: row.createdAt as Date,
-      };
-    } catch {
-      throw new InternalServerErrorException('Stored URL failed validation');
-    }
+    return {
+      clicks: row.clicks as number,
+      originalUrl: row.longUrl as string,
+      createdAt: row.createdAt as Date,
+      expiresAt: row.expiresAt as Date | null,
+    };
   }
 }
-
