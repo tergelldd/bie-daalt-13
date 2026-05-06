@@ -1,0 +1,89 @@
+openapi: 3.0.0
+info:
+  title: URL Shortener
+  description: URL redirect + short link API
+  version: '1.0'
+paths:
+  /api/urls:
+    post:
+      summary: Short link үүсгэх
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                longUrl:
+                  type: string
+                  example: https://example.com
+                expiresAt:
+                  type: string
+                  format: date-time
+                  example: '2026-12-31T00:00:00Z'
+              required:
+                - longUrl
+      responses:
+        '201':
+          description: Short link үүссэн
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShortUrl'
+        '400':
+          description: Invalid URL
+  /stats/{code}:
+    get:
+      summary: Click статистик харах
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            example: a1b2c3d
+      responses:
+        '200':
+          description: Stats мэдээлэл
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShortUrl'
+        '404':
+          description: Код олдсонгүй
+  /{code}:
+    get:
+      summary: Redirect to original URL
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect
+        '404':
+          description: Код олдсонгүй
+        '410':
+          description: Хугацаа дууссан
+components:
+  schemas:
+    ShortUrl:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        longUrl:
+          type: string
+        clicks:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true

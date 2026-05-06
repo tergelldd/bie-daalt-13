@@ -1,3 +1,4 @@
+// partB/src/app.service.spec.ts
 import { Test } from '@nestjs/testing';
 import { BadRequestException, NotFoundException, GoneException } from '@nestjs/common';
 import { AppService } from './app.service';
@@ -33,66 +34,112 @@ describe('AppService', () => {
     service = moduleRef.get(AppService);
   });
 
-  describe('createShortUrl', () => {
+  // --- createShortLink ---
+  describe('createShortLink', () => {
     it('1. Success: valid URL өгвөл хадгална', async () => {
-      prismaMock.shortUrl.create.mockResolvedValue({ code: 'AbC123x' });
-      const res = await service.createShortUrl('https://test.com');
+      prismaMock.shortUrl.create.mockResolvedValue({ code: 'AbC123x', longUrl: 'https://test.com' });
+      const res = await service.createShortLink({ longUrl: 'https://test.com' });
       expect(res.code).toBeDefined();
     });
 
-    it('2. Validation: хоосон URL дээр алдаа шиднэ', async () => {
-      // Чиний AppService-д URL validation байхгүй бол энэ тест унах магадлалтай
-      await expect(service.createShortUrl('')).rejects.toThrow();
+    it('2. Validation: хоосон URL дээр BadRequestException шиднэ', async () => {
+      await expect(service.createShortLink({ longUrl: '' })).rejects.toThrow(BadRequestException);
     });
 
-    it('3. Feature: expiresAt утгыг зөв хадгална', async () => {
+    it('3. Feature: expiresAt утгыг зөв дамжуулна', async () => {
       const date = new Date();
-      prismaMock.shortUrl.create.mockImplementation(({ data }) => data);
-      const res = await service.createShortUrl('https://test.com', date);
+      prismaMock.shortUrl.create.mockImplementation(({ data }) => Promise.resolve(data));
+      const res = await service.createShortLink({ longUrl: 'https://test.com', expiresAt: date });
       expect(res.expiresAt).toEqual(date);
     });
 
-    it('5. Length: үүсгэсэн код 7 тэмдэгт байх ёстой', async () => {
-      prismaMock.shortUrl.create.mockImplementation(({ data }) => data);
-      const res = await service.createShortUrl('https://test.com');
+    it('4. Validation: http/https биш protocol татгалзана', async () => {
+      await expect(
+        service.createShortLink({ longUrl: 'ftp://evil.com' })
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('5. Feature: үүсгэсэн код 7 тэмдэгт байх ёстой', async () => {
+      prismaMock.shortUrl.create.mockImplementation(({ data }) => Promise.resolve(data));
+      const res = await service.createShortLink({ longUrl: 'https://test.com' });
       expect(res.code.length).toBe(7);
     });
   });
 
+  // --- getOriginalUrl ---
   describe('getOriginalUrl', () => {
-    it('6. Success: урт URL-ыг буцаана', async () => {
-      prismaMock.shortUrl.findUnique.mockResolvedValue({ longUrl: 'https://test.com', expiresAt: null });
+    it('6. Success: redirect URL string буцаана', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: any) =>
+        fn({
+          shortUrl: {
+            findUnique: jest.fn().mockResolvedValue({ longUrl: 'https://test.com', expiresAt: null }),
+            update: jest.fn(),
+          },
+        })
+      );
       const url = await service.getOriginalUrl('abc1234');
-      expect(url.longUrl).toBe('https://test.com');
+      expect(url).toBe('https://test.com/');
     });
 
-    it('7. Not Found: байхгүй код дээр 404 шиднэ', async () => {
-      prismaMock.shortUrl.findUnique.mockResolvedValue(null);
-      await expect(service.getOriginalUrl('none')).rejects.toThrow(NotFoundException);
+    it('7. Not Found: байхгүй код → NotFoundException', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: any) =>
+        fn({ shortUrl: { findUnique: jest.fn().mockResolvedValue(null), update: jest.fn() } })
+      );
+      await expect(service.getOriginalUrl('none123')).rejects.toThrow(NotFoundException);
     });
 
     it('8. Analytics: clicks тоог нэмэгдүүлнэ', async () => {
-      prismaMock.shortUrl.findUnique.mockResolvedValue({ longUrl: 't.com' });
-      await service.getOriginalUrl('click');
-      expect(prismaMock.shortUrl.update).toHaveBeenCalled();
+      const updateMock = jest.fn();
+      prismaMock.$transaction.mockImplementation(async (fn: any) =>
+        fn({
+          shortUrl: {
+            findUnique: jest.fn().mockResolvedValue({ longUrl: 'https://test.com', expiresAt: null }),
+            update: updateMock,
+          },
+        })
+      );
+      await service.getOriginalUrl('abc1234');
+      expect(updateMock).toHaveBeenCalled();
     });
 
-    it('9. Expiration: хугацаа дууссан бол 410 шиднэ', async () => {
-      const past = new Date(); past.setFullYear(2020);
-      prismaMock.shortUrl.findUnique.mockResolvedValue({ expiresAt: past });
-      await expect(service.getOriginalUrl('old')).rejects.toThrow(GoneException);
+    it('9. Expiration: хугацаа дууссан → GoneException', async () => {
+      const past = new Date('2020-01-01');
+      prismaMock.$transaction.mockImplementation(async (fn: any) =>
+        fn({ shortUrl: { findUnique: jest.fn().mockResolvedValue({ longUrl: 'https://t.com', expiresAt: past }), update: jest.fn() } })
+      );
+      await expect(service.getOriginalUrl('old1234')).rejects.toThrow(GoneException);
     });
 
-    it('10. Expiration: хугацаа дуусаагүй бол ажиллана', async () => {
-      const future = new Date(); future.setFullYear(2030);
-      prismaMock.shortUrl.findUnique.mockResolvedValue({ longUrl: 't.com', expiresAt: future });
-      const res = await service.getOriginalUrl('new');
+    it('10. Expiration: хугацаа дуусаагүй → ажиллана', async () => {
+      const future = new Date('2030-01-01');
+      prismaMock.$transaction.mockImplementation(async (fn: any) =>
+        fn({
+          shortUrl: {
+            findUnique: jest.fn().mockResolvedValue({ longUrl: 'https://test.com', expiresAt: future }),
+            update: jest.fn(),
+          },
+        })
+      );
+      const res = await service.getOriginalUrl('fut1234');
       expect(res).toBeDefined();
     });
 
-    it('11. Security: буруу тэмдэгттэй код татгалзана', async () => {
-      // Энэ тест чиний AppService-д regex байгаа эсэхээс хамаарна
-      await expect(service.getOriginalUrl('x/y')).rejects.toThrow();
+    it('11. Security: тусгай тэмдэгттэй код → BadRequestException', async () => {
+      await expect(service.getOriginalUrl('x/y')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // --- getStatsByCode ---
+  describe('getStatsByCode', () => {
+    it('12. Success: байгаа код → ShortUrl объект буцаана', async () => {
+      prismaMock.shortUrl.findUnique.mockResolvedValue({ code: 'abc1234', clicks: 5 });
+      const res = await service.getStatsByCode('abc1234');
+      expect(res.clicks).toBe(5);
+    });
+
+    it('13. Not Found: байхгүй код → NotFoundException', async () => {
+      prismaMock.shortUrl.findUnique.mockResolvedValue(null);
+      await expect(service.getStatsByCode('none123')).rejects.toThrow(NotFoundException);
     });
   });
 });

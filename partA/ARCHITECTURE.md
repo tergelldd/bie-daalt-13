@@ -19,10 +19,10 @@ flowchart TB
   %% API / Application layer
   %% =======================
   subgraph A["API / Application layer (NestJS)"]
-    C1["UrlController\n- POST /api/urls\n- GET  /api/urls/:code"]
-    C2["RedirectController\n- GET /:code"]
-    S1["UrlService\n- generateCode()\n- validateUrl()\n- createShortUrl()\n- getStats()"]
-    S2["RedirectService\n- resolveLongUrl()\n- checkExpiration()\n- incrementClicks()"]
+    C1["app.controller\n- POST /api/urls\n- GET  /stats/:code"]
+    C2["app.controller(redirect)\n- GET /:code"]
+    S1["app.service\n- generateCode()\n- validateUrl()\n- createShortUrl()\n- getStats()"]
+    S2["app.service\n- resolveLongUrl()\n- checkExpiration()\n- incrementClicks()"]
     R1["UrlRepository (ORM)\n- insert/find/update"]
     J1["ExpirationJob (optional)\n- cleanupExpired()"]
   end

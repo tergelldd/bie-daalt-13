@@ -1,50 +1,77 @@
-import { Injectable, NotFoundException, GoneException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  GoneException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from './prisma/prisma.service';
 import { ShortUrl } from '@prisma/client';
+import {
+  assertValidLongUrlForCreate,
+  normalizeShortCodeParam,
+  safeRedirectHref,
+} from './url-validation';
 
-/**
- * URL богиносгох үйлчилгээний үндсэн логик анги.
- * @class AppService
- */
 @Injectable()
 export class AppService {
   constructor(private prisma: PrismaService) {}
 
+  getHello(): string {
+    return 'URL Shortener API is running.';
+  }
+
   /**
    * Урт URL-ыг богиносгож, өгөгдлийн санд хадгална.
-   * @param {string} longUrl - Хэрэглэгчийн оруулсан урт холбоос.
-   * @param {Date} [expiresAt] - Холбоос хүчингүй болох хугацаа (сонголтоор).
-   * @returns {Promise<ShortUrl>} Үүсгэгдсэн богино URL-ын мэдээлэл.
+   * @param longUrl - Хэрэглэгчийн оруулсан урт холбоос
+   * @param expiresAt - Холбоос хүчингүй болох хугацаа (сонголтоор)
    */
-  
-  async createShortUrl(longUrl: string, expiresAt?: Date): Promise<ShortUrl> {
-    if (!longUrl) throw new BadRequestException('URL заавал байх ёстой');
+  async createShortLink(params: {
+    longUrl: string;
+    expiresAt?: Date;
+  }): Promise<ShortUrl> {
+    assertValidLongUrlForCreate(params.longUrl);
+
     const code = Math.random().toString(36).substring(2, 9);
     return this.prisma.shortUrl.create({
-      data: { longUrl, code, expiresAt },
+      data: {
+        longUrl: params.longUrl,
+        code,
+        expiresAt: params.expiresAt,
+      },
     });
   }
 
   /**
-   * Богино кодоор үндсэн URL-ыг хайж олох.
-   * @param {string} code - Богино код.
-   * @throws {NotFoundException} Код олдохгүй бол.
-   * @throws {GoneException} Холбоосын хугацаа дууссан бол.
-   * @returns {Promise<ShortUrl>} Үндсэн URL-ын мэдээлэл.
+   * Богино кодоор үндсэн URL-ыг олж, click тоог нэмэгдүүлнэ.
+   * Transaction ашиглан race condition-оос хамгаална.
    */
-  async getOriginalUrl(code: string): Promise<ShortUrl> {
-    const urlEntry = await this.prisma.shortUrl.findUnique({ where: { code } });
+  async getOriginalUrl(rawCode: string): Promise<string> {
+    // url-validation.ts ашиглан code-г шалгана
+    const code = normalizeShortCodeParam(rawCode);
 
-    if (!urlEntry) throw new NotFoundException('URL олдсонгүй');
-    
-    if (urlEntry.expiresAt && new Date() > urlEntry.expiresAt) {
-      throw new GoneException('Энэ холбоосын хугацаа дууссан байна');
-    }
+    return this.prisma.$transaction(async (tx) => {
+      const urlEntry = await tx.shortUrl.findUnique({ where: { code } });
 
-    await this.prisma.shortUrl.update({
-      where: { code },
-      data: { clicks: { increment: 1 } },
+      if (!urlEntry) throw new NotFoundException('URL олдсонгүй');
+
+      if (urlEntry.expiresAt && new Date() > urlEntry.expiresAt) {
+        throw new GoneException('Энэ холбоосын хугацаа дууссан байна');
+      }
+
+      await tx.shortUrl.update({
+        where: { code },
+        data: { clicks: { increment: 1 } },
+      });
+
+      return safeRedirectHref(urlEntry.longUrl);
     });
+  }
+  
+  async getStatsByCode(rawCode: string): Promise<ShortUrl> {
+    const code = normalizeShortCodeParam(rawCode);
+
+    const urlEntry = await this.prisma.shortUrl.findUnique({ where: { code } });
+    if (!urlEntry) throw new NotFoundException('URL олдсонгүй');
 
     return urlEntry;
   }

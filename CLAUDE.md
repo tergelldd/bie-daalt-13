@@ -7,7 +7,7 @@
 
 ### Backend (NestJS)
 ```bash
-cd backend
+cd partB
 npm install
 npm run start:dev
 ```
@@ -21,7 +21,7 @@ npm run dev
 
 ### Tests
 ```bash
-cd backend && npm test
+cd partB && npm test
 cd frontend && npm test
 ```
 
