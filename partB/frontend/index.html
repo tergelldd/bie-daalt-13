@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>URL Shortener</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #ffffff;
+      --bg-secondary: #f5f5f3;
+      --text: #1a1a1a;
+      --text-muted: #888;
+      --text-hint: #bbb;
+      --border: rgba(0,0,0,0.12);
+      --border-hover: rgba(0,0,0,0.25);
+      --success: #16a34a;
+      --success-bg: #dcfce7;
+      --danger: #dc2626;
+      --danger-bg: #fee2e2;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1c1c;
+        --bg-secondary: #2a2a2a;
+        --text: #f0f0f0;
+        --text-muted: #888;
+        --text-hint: #555;
+        --border: rgba(255,255,255,0.12);
+        --border-hover: rgba(255,255,255,0.28);
+        --success: #4ade80;
+        --success-bg: #052e16;
+        --danger: #f87171;
+        --danger-bg: #450a0a;
+      }
+    }
+
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 3rem 1rem;
+    }
+
+    .app { width: 100%; max-width: 520px; }
+
+    /* Brand */
+    .brand {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 2.5rem;
+    }
+    .brand-icon {
+      width: 38px; height: 38px;
+      background: var(--text);
+      border-radius: var(--radius-md);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .brand-icon svg { width: 18px; height: 18px; stroke: var(--bg); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .brand-name { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; color: var(--text); }
+    .brand-desc { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      margin-bottom: 1.25rem;
+    }
+    .tab {
+      flex: 1; padding: 9px 12px;
+      font-size: 13px; font-family: inherit;
+      background: var(--bg); border: none; cursor: pointer;
+      color: var(--text-muted);
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab:not(:last-child) { border-right: 0.5px solid var(--border); }
+    .tab.active { background: var(--text); color: var(--bg); }
+    .tab svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* Card */
+    .card {
+      background: var(--bg);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.375rem;
+    }
+
+    /* Form */
+    .field { margin-bottom: 1rem; }
+    label.lbl {
+      display: block; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--text-muted); margin-bottom: 6px;
+    }
+    input[type="text"], input[type="url"], input[type="datetime-local"] {
+      width: 100%;
+      padding: 9px 12px;
+      font-size: 14px; font-family: inherit;
+      background: var(--bg-secondary);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: var(--border-hover); }
+    input::placeholder { color: var(--text-hint); }
+
+    /* Buttons */
+    .btn-primary {
+      width: 100%; margin-top: 4px;
+      padding: 10px 16px;
+      font-size: 14px; font-family: inherit;
+      background: var(--text); color: var(--bg);
+      border: none; border-radius: var(--radius-md);
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: opacity 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.82; }
+    .btn-primary:disabled { opacity: 0.38; cursor: not-allowed; }
+    .btn-primary svg { width: 15px; height: 15px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+    .btn-copy {
+      margin-top: 10px;
+      padding: 6px 14px;
+      font-size: 12px; font-family: inherit;
+      background: transparent;
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-muted); cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .btn-copy:hover { background: var(--bg-secondary); }
+    .btn-copy.copied { color: var(--success); border-color: var(--success); }
+    .btn-copy svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* Result box */
+    .result-box {
+      margin-top: 1.125rem;
+      background: var(--bg-secondary);
+      border-radius: var(--radius-md);
+      padding: 1rem 1.125rem;
+      display: none;
+    }
+    .result-box.visible { display: block; }
+    .result-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-hint); margin-bottom: 5px; }
+    .result-url { font-size: 15px; font-weight: 500; color: var(--text); word-break: break-all; }
+
+    /* Error */
+    .err { margin-top: 10px; font-size: 13px; color: var(--danger); display: none; }
+    .err.visible { display: block; }
+
+    /* Stats */
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 1.125rem; }
+    .stat-card {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-md);
+      padding: 0.875rem 1rem;
+    }
+    .stat-num { font-size: 24px; font-weight: 600; color: var(--text); }
+    .stat-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-top: 3px; }
+
+    .stat-url-box {
+      margin-top: 10px;
+      background: var(--bg-secondary);
+      border-radius: var(--radius-md);
+      padding: 0.875rem 1rem;
+    }
+    .stat-url-val { font-size: 13px; color: var(--text-muted); word-break: break-all; margin-top: 4px; }
+
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; padding: 4px 10px;
+      border-radius: 99px; margin-top: 10px;
+    }
+    .status-active { background: var(--success-bg); color: var(--success); }
+    .status-expired { background: var(--danger-bg); color: var(--danger); }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Footer note */
+    .footer-note {
+      margin-top: 1.5rem; padding-top: 1rem;
+      border-top: 0.5px solid var(--border);
+      font-size: 11px; color: var(--text-hint);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: blink 2s infinite; flex-shrink: 0; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Brand -->
+  <div class="brand">
+    <div class="brand-icon">
+      <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+    </div>
+    <div>
+      <div class="brand-name">url.short</div>
+      <div class="brand-desc">NestJS + PostgreSQL + Prisma</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" id="tab-create" onclick="switchTab('create')">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Үүсгэх
+    </button>
+    <button class="tab" id="tab-stats" onclick="switchTab('stats')">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Статистик
+    </button>
+  </div>
+
+  <!-- Pane: Create -->
+  <div id="pane-create">
+    <div class="card">
+      <div class="field">
+        <label class="lbl" for="long-url">Урт URL</label>
+        <input type="url" id="long-url" placeholder="https://example.com/very/long/path" autocomplete="off" />
+      </div>
+      <div class="field" style="margin-bottom:0.5rem">
+        <label class="lbl" for="expires">Дуусах хугацаа <span style="color:var(--text-hint);text-transform:none;letter-spacing:0">(сонголтоор)</span></label>
+        <input type="datetime-local" id="expires" />
+      </div>
+      <button class="btn-primary" id="create-btn" onclick="createUrl()">
+        <svg viewBox="0 0 24 24"><path d="M6 20h0M4 4l10.5 10.5M14 4h6v6"/><path d="M20 14v6h-6"/></svg>
+        Богиносгох
+      </button>
+      <div class="err" id="create-err"></div>
+      <div class="result-box" id="create-result">
+        <div class="result-label">Богино холбоос</div>
+        <div class="result-url" id="result-url-text"></div>
+        <button class="btn-copy" id="copy-btn" onclick="copyUrl()">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span id="copy-label">Хуулах</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pane: Stats -->
+  <div id="pane-stats" style="display:none">
+    <div class="card">
+      <div class="field">
+        <label class="lbl" for="stat-code">Богино код</label>
+        <input type="text" id="stat-code" placeholder="a1b2c3d" maxlength="32" autocomplete="off" />
+      </div>
+      <button class="btn-primary" id="stats-btn" onclick="getStats()">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Хайх
+      </button>
+      <div class="err" id="stats-err"></div>
+      <div id="stats-result" style="display:none">
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-num" id="s-clicks">—</div>
+            <div class="stat-lbl">Нийт дарсан</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="s-date">—</div>
+            <div class="stat-lbl">Үүсгэсэн</div>
+          </div>
+        </div>
+        <div class="stat-url-box">
+          <div class="result-label">Үндсэн URL</div>
+          <div class="stat-url-val" id="s-longurl">—</div>
+        </div>
+        <div id="s-status"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer-note">
+    <div class="dot"></div>
+    API: localhost:3000 — <code>npm run start:dev</code>
+  </div>
+
+</div>
+
+<script>
+  const API_BASE = 'http://localhost:3000';
+  let currentShortUrl = '';
+
+  function switchTab(tab) {
+    ['create','stats'].forEach(t => {
+      document.getElementById('pane-' + t).style.display = t === tab ? 'block' : 'none';
+      document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+    });
+  }
+
+  function showErr(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.classList.add('visible');
+  }
+  function hideErr(id) { document.getElementById(id).classList.remove('visible'); }
+
+  function setBtn(id, loading, html) {
+    const btn = document.getElementById(id);
+    btn.disabled = loading;
+    btn.innerHTML = loading ? '<span class="spinner"></span> Уншиж байна...' : html;
+  }
+
+  async function createUrl() {
+    const longUrl = document.getElementById('long-url').value.trim();
+    const expiresRaw = document.getElementById('expires').value;
+    hideErr('create-err');
+    document.getElementById('create-result').classList.remove('visible');
+
+    if (!longUrl) { showErr('create-err', 'URL оруулна уу.'); return; }
+    if (!/^https?:\/\//i.test(longUrl)) {
+      showErr('create-err', 'http:// эсвэл https:// -ээр эхлэх URL оруулна уу.'); return;
+    }
+
+    const createIcon = '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20h0M4 4l10.5 10.5M14 4h6v6"/><path d="M20 14v6h-6"/></svg>';
+    setBtn('create-btn', true, '');
+
+    try {
+      const body = { longUrl };
+      if (expiresRaw) body.expiresAt = new Date(expiresRaw).toISOString();
+
+      const res = await fetch(`${API_BASE}/api/urls`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(Array.isArray(data.message) ? data.message.join(', ') : (data.message || 'Алдаа гарлаа'));
+
+      currentShortUrl = `${API_BASE}/${data.code}`;
+      document.getElementById('result-url-text').textContent = currentShortUrl;
+      document.getElementById('create-result').classList.add('visible');
+      document.getElementById('copy-label').textContent = 'Хуулах';
+      document.getElementById('copy-btn').classList.remove('copied');
+    } catch (e) {
+      showErr('create-err', e.message.includes('fetch')
+        ? 'API холбогдохгүй байна. `npm run start:dev` ажиллуулна уу.'
+        : e.message);
+    } finally {
+      setBtn('create-btn', false, `${createIcon} Богиносгох`);
+    }
+  }
+
+  async function getStats() {
+    const code = document.getElementById('stat-code').value.trim();
+    hideErr('stats-err');
+    document.getElementById('stats-result').style.display = 'none';
+
+    if (!code) { showErr('stats-err', 'Код оруулна уу.'); return; }
+    if (!/^[a-zA-Z0-9]+$/.test(code)) { showErr('stats-err', 'Код нь зөвхөн үсэг, тоо агуулна.'); return; }
+
+    const searchIcon = '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+    setBtn('stats-btn', true, '');
+
+    try {
+      const res = await fetch(`${API_BASE}/stats/${code}`);
+      const data = await res.json();
+      if (res.status === 404) throw new Error('Тийм код олдсонгүй.');
+      if (res.status === 400) throw new Error(data.message || 'Буруу код формат.');
+      if (!res.ok) throw new Error(data.message || 'Алдаа гарлаа');
+
+      document.getElementById('s-clicks').textContent = data.clicks ?? '—';
+      document.getElementById('s-date').textContent = data.createdAt
+        ? new Date(data.createdAt).toLocaleDateString('mn-MN', { month: 'short', day: 'numeric' })
+        : '—';
+      document.getElementById('s-longurl').textContent = data.longUrl || '—';
+
+      const expired = data.expiresAt && new Date(data.expiresAt) < new Date();
+      document.getElementById('s-status').innerHTML = expired
+        ? '<span class="status-badge status-expired">✕ Хугацаа дууссан</span>'
+        : '<span class="status-badge status-active">✓ Идэвхтэй</span>';
+
+      document.getElementById('stats-result').style.display = 'block';
+    } catch (e) {
+      showErr('stats-err', e.message.includes('fetch')
+        ? 'API холбогдохгүй байна. `npm run start:dev` ажиллуулна уу.'
+        : e.message);
+    } finally {
+      setBtn('stats-btn', false, `${searchIcon} Хайх`);
+    }
+  }
+
+  async function copyUrl() {
+    if (!currentShortUrl) return;
+    try {
+      await navigator.clipboard.writeText(currentShortUrl);
+      document.getElementById('copy-label').textContent = 'Хуулагдлаа!';
+      document.getElementById('copy-btn').classList.add('copied');
+      setTimeout(() => {
+        document.getElementById('copy-label').textContent = 'Хуулах';
+        document.getElementById('copy-btn').classList.remove('copied');
+      }, 2000);
+    } catch { showErr('create-err', 'Clipboard хандах боломжгүй.'); }
+  }
+
+  document.getElementById('long-url').addEventListener('keydown', e => { if (e.key === 'Enter') createUrl(); });
+  document.getElementById('stat-code').addEventListener('keydown', e => { if (e.key === 'Enter') getStats(); });
+</script>
+</body>
+</html>
