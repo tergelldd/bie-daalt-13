@@ -19,7 +19,6 @@
 ### 1. Environment
 ```bash
 cp .env.example .env
-# .env дотор DATABASE_URL-ийг өөрийн PostgreSQL-д тааруулж өөрч
 ```
 
 ### 2. Dependencies суулгах
@@ -79,7 +78,12 @@ npm run test:e2e      # e2e tests
 ```json
 { "id": 1, "code": "a1b2c3d", "longUrl": "https://example.com", "clicks": 42, "createdAt": "...", "expiresAt": null }
 ```
-
+# Frontend-г ажиллуулах (backend асч байх үед)
+cd partB/frontend
+# Browser-д нээх — аль ч HTTP server-ээр serve хийнэ
+npx serve .
+# эсвэл Python-оор:
+python3 -m http.server 8080
 ---
 
 ## Project structure
